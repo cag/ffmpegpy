@@ -29,22 +29,46 @@ else:
         version_run_res.returncode, version_run_res.stderr))
 
 
-def probe(file_or_blob, xargs=()):
-    args = ['ffprobe', '-v', 'quiet', '-print_format', 'json']
-    args.extend(xargs)
-
+def add_input_file_to_args(args, file_or_blob):
     if isinstance(file_or_blob, str):
         args.extend(('-i', file_or_blob))
-        res = run(args, stdout=PIPE, stderr=PIPE)
+        return False
     elif isinstance(file_or_blob, (bytes, bytearray)):
         args.extend(('-i', 'pipe:0'))
-        res = run(args, input=file_or_blob, stdout=PIPE, stderr=PIPE)
+        return True
+    else:
+        raise ValueError('unexpected input file {}'.format(file_or_blob))
+
+
+def probe(file_or_blob, options=('-show_format',)):
+    args = [ffprobe_bin, '-v', 'quiet', '-print_format', 'json']
+    args.extend(options)
+    using_stdin = add_input_file_to_args(args, file_or_blob)
+
+    res = run(args, input=file_or_blob if using_stdin else None, stdout=PIPE, stderr=PIPE)
 
     if res.returncode == 0:
         return json.loads(res.stdout.decode())
     else:
         raise ChildProcessError('`{}` failed with exit code {}: {}'.format(
-            ' '.join(map(shlex.quote, args)), version_run_res.returncode, version_run_res.stderr))
+            ' '.join(map(shlex.quote, args)), res.returncode, res.stderr))
+
+
+def convert(file_or_blob, options=(), infile_options=(), outfile_options=()):
+    args = [ffmpeg_bin]
+    args.extend(options)
+    args.extend(infile_options)
+    using_stdin = add_input_file_to_args(args, file_or_blob)
+    args.extend(outfile_options)
+    args.append('pipe:1')
+
+    res = run(args, input=file_or_blob if using_stdin else None, stdout=PIPE, stderr=PIPE)
+
+    if res.returncode == 0:
+        return res.stdout
+    else:
+        raise ChildProcessError('`{}` failed with exit code {}: {}'.format(
+            ' '.join(map(shlex.quote, args)), res.returncode, res.stderr))
 
 
 if __name__ == '__main__':
